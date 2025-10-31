@@ -50,13 +50,25 @@ Public Class DbConnectionInfo
     <JsonPropertyName("sPassword")>
     Public Property Password As String
 End Class
-' 유니온 출입기록 전송 결과 클래스 항목
-Public Class UnionFaceLogResponse
-    <JsonPropertyName("intResult")>
-    Public Property IntResult As String
+Public Class DataReceivedEventArgs
+    Inherits EventArgs
 
-    <JsonPropertyName("strResult")>
-    Public Property StrResult As String
+    ' [IN] 클라이언트가 보낸 원본 데이터 (모듈 -> Form1)
+    Public ReadOnly Property ReceivedData As String
+
+    ' [IN] 어느 클라이언트인지 식별용 (모듈 -> Form1)
+    Public ReadOnly Property ClientEndPoint As String
+
+    ' [OUT] Form1이 처리 후 클라이언트에게 보낼 응답 (Form1 -> 모듈)
+    Public Property ResponseData As String
+
+    ' 생성자
+    Public Sub New(receivedData As String, clientEndPoint As String)
+        Me.ReceivedData = receivedData
+        Me.ClientEndPoint = clientEndPoint
+        Me.ResponseData = String.Empty ' 기본 응답은 빈 문자열
+    End Sub
 End Class
+
 
 
