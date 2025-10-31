@@ -1,70 +1,121 @@
-﻿Imports System.Text
-Imports System.IO
+﻿Imports System.IO
+Imports System.Net
+Imports System.Net.Sockets
+Imports System.Text
+Imports System.Threading
+Imports Microsoft.Identity
 
 Public Class Form1
+    ' 서버 리스너 객체
+    Private listener As TcpListener
+    ' 비동기 작업을 취소하기 위한 토큰 소스
+    Private cts As CancellationTokenSource
+    ' 클라이언트 목록 (선택적)
+    Private connectedClients As New List(Of TcpClient)
+    Private Async Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        cts = New CancellationTokenSource()
+        Try
+            listener = New TcpListener(IPAddress.Any, 36001)
+            listener.Start()
+            Await Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)
+        Catch ex As SocketException
+            WriteLog($"서버 시작 오류: {ex.Message}", "KioskLog.log")
+        Catch ex As Exception
+            WriteLog($"오류: {ex.Message}", "KioskLog.log")
+        Finally
+            StopServer()
+        End Try
 
-    Private _server As SocketServerModule
-    Private Shared ReadOnly logLocker As New Object()
-    ' --- 3. 폼 로드 ---
-    Private Sub Form1_Load(sender As Object, e As EventArgs) Handles Me.Load
-        _server = New SocketServerModule(36001)   ' 36001 포트로 대기
-
-        ' 로그 이벤트 핸들러 연결
-        AddHandler _server.LogOccurred, AddressOf OnServerLogOccurred
-        ' 데이터 수신 이벤트 핸들러 연결
-        AddHandler _server.DataReceived, AddressOf OnDataReceived
-        _server.Start()
     End Sub
-    Private Sub OnServerLogOccurred(message As String, fileName As String)
-        WriteLog(message, fileName)
-    End Sub
-    Private Sub OnDataReceived(sender As Object, e As DataReceivedEventArgs)
-        Dim receivedMessage = e.ReceivedData.Trim()
-        Dim response As String = "" ' 클라이언트에게 보낼 최종 응답
 
-        ' 전문 파싱
-        ' "ARGOS|022405130012375D|180" 같은 문자열을 "|" 기준으로 자름
-        Dim parts As String() = receivedMessage.Split("|"c)  ' (c는 |를 '문자'로 취급하라는 VB.NET 문법입니다)
+    ' 클라이언트 접속을 대기 루프
+    Private Async Function AcceptClientsAsync(ByVal token As CancellationToken) As Task
+        Try
+            While Not token.IsCancellationRequested
+                ' 클라이언트 접속 대기 (비동기)
+                Dim client As TcpClient = Await listener.AcceptTcpClientAsync(token)
 
-        If parts.Length = 3 Then
-            Dim identifier As String = parts(0)  ' ex) ARGOS
-            Dim companyCode As String = parts(1) ' ex) 022405130012375D
-            Dim memIDX As String = parts(2)    ' ex) "180"
+                ' 클라이언트 접속 성공
+                Dim clientIp As String = CType(client.Client.RemoteEndPoint, IPEndPoint).ToString()
+                WriteLog($"클라이언트 연결됨: {clientIp}", "KioskLog.log")
 
+                connectedClients.Add(client)
+
+                Dim clientTask As Task = HandleClientAsync(client, token)
+            End While
+        Catch ex As OperationCanceledException
+            WriteLog($"서버 대기 루프 중지됨.", "KioskLog.log")
+        Catch ex As Exception
+            WriteLog($"대기 루프 오류: {ex.Message}", "KioskLog.log")
+        End Try
+    End Function
+
+    ' 개별 클라이언트와의 통신 처리
+    Private Async Function HandleClientAsync(ByVal client As TcpClient, ByVal token As CancellationToken) As Task
+        Using client
             Try
-                ' 웹에다가 mem_idx 전송 하는 부분을 여기에다가 작업
-                ' $.fnCsToWebCallMemAuthK(회원IDX)
+                Using stream As NetworkStream = client.GetStream()
+                    ' 한글 처리를 위해 UTF-8 사용
+                    Using reader As New StreamReader(stream, Encoding.UTF8)
+                        Using writer As New StreamWriter(stream, Encoding.UTF8)
+                            writer.AutoFlush = True ' 즉시 전송
+                            While client.Connected AndAlso Not token.IsCancellationRequested
+                                Dim message As String = Await reader.ReadLineAsync().WaitAsync(token)
 
-                response = $"SUCCESS|{companyCode}|{memIDX}"
-                WriteLog($"[로직 성공] {receivedMessage} -> {response}", "KioskLog.log")
+                                If message Is Nothing Then  ' 전문수신된게 없으면 종료  
+                                    Exit While
+                                End If
 
+                                WriteLog($"전문 수신: {message}", "KioskLog.log")
+
+                                If message.Equals("exit", StringComparison.OrdinalIgnoreCase) Then
+                                    Exit While
+                                End If
+
+                                Dim responseMessage As String
+
+                                If message.StartsWith("ARGOS|", StringComparison.OrdinalIgnoreCase) Then
+                                    responseMessage = "SUCCESS" & message.Substring("ARGOS".Length)
+                                Else
+                                    responseMessage = $"ERROR: Unknown format ({message})"
+                                End If
+                                Await writer.WriteLineAsync(responseMessage)
+
+                                WriteLog($"전송: {responseMessage}", "KioskLog.log")
+
+                            End While
+                        End Using
+                    End Using
+                End Using
+            Catch ex As OperationCanceledException
+                ' 서버 중지 시 클라이언트 핸들러도 종료
+            Catch ex As IOException
+                WriteLog($"클라이언트 연결 끊어짐 (IO).", "KioskLog.log")
             Catch ex As Exception
-                response = $"ERROR: Logic failed ({ex.Message})"
-                WriteLog($"[로직 오류] {receivedMessage} -> {ex.Message}", "KioskLog.log")
+                WriteLog($"클라이언트 처리 오류 : {ex.Message}", "KioskLog.log")
             End Try
-        Else
-            ' 전문 형식이 안 맞는 경우 (예: ARGOS|1234)
-            response = "ERROR: Invalid message format."
-            WriteLog($"[전문 오류] {receivedMessage}", "KioskLog.log")
-        End If
+        End Using
 
-        ' 클라이언트에게 응답 전송
-        e.ResponseData = response
+        connectedClients.Remove(client)
+        WriteLog($"클라이언트 연결 종료", "KioskLog.log")
 
-    End Sub
-    Private Async Sub Form1_FormClosing(sender As Object, e As FormClosingEventArgs) Handles Me.FormClosing
-        ' 중복 실행 방지 (선택 사항)
-        If _server Is Nothing Then Return
+    End Function
 
-        ' 핸들러 먼저 제거
-        RemoveHandler _server.LogOccurred, AddressOf OnServerLogOccurred
-        RemoveHandler _server.DataReceived, AddressOf OnDataReceived
-
-        ' 서버가 완전히 멈출 때까지 비동기로 대기
-        Await _server.StopServerAsync()
-        _server = Nothing
+    ' 서버 중지 로직
+    Private Sub StopServer()
+        listener?.Stop()
+        For Each tcpClient In connectedClients
+            tcpClient?.Close()
+        Next
+        connectedClients.Clear()
+        WriteLog($"서버 중지됨", "KioskLog.log")
 
     End Sub
 
+    ' 폼이 닫힐 때 서버가 실행 중이면 중지
+    Private Sub Form1_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
+        cts?.Cancel()
+        listener?.Stop()
+    End Sub
 
 End Class

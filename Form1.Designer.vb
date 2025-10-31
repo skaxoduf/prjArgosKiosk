@@ -24,9 +24,7 @@ Partial Class Form1
     Private Sub InitializeComponent()
         WebView21 = New Microsoft.Web.WebView2.WinForms.WebView2()
         pnlCSMain = New Panel()
-        ListBox1 = New ListBox()
         CType(WebView21, ComponentModel.ISupportInitialize).BeginInit()
-        pnlCSMain.SuspendLayout()
         SuspendLayout()
         ' 
         ' WebView21
@@ -44,20 +42,10 @@ Partial Class Form1
         ' pnlCSMain
         ' 
         pnlCSMain.BackColor = Color.White
-        pnlCSMain.Controls.Add(ListBox1)
         pnlCSMain.Location = New Point(69, 107)
         pnlCSMain.Name = "pnlCSMain"
         pnlCSMain.Size = New Size(741, 476)
         pnlCSMain.TabIndex = 1
-        ' 
-        ' ListBox1
-        ' 
-        ListBox1.FormattingEnabled = True
-        ListBox1.ItemHeight = 15
-        ListBox1.Location = New Point(85, 73)
-        ListBox1.Name = "ListBox1"
-        ListBox1.Size = New Size(359, 274)
-        ListBox1.TabIndex = 0
         ' 
         ' Form1
         ' 
@@ -69,12 +57,10 @@ Partial Class Form1
         Name = "Form1"
         Text = "Form1"
         CType(WebView21, ComponentModel.ISupportInitialize).EndInit()
-        pnlCSMain.ResumeLayout(False)
         ResumeLayout(False)
     End Sub
 
     Friend WithEvents WebView21 As Microsoft.Web.WebView2.WinForms.WebView2
     Friend WithEvents pnlCSMain As Panel
-    Friend WithEvents ListBox1 As ListBox
 
 End Class
