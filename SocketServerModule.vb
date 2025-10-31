@@ -121,4 +121,18 @@ Public Class SocketServerModule
 
     End Function
 
+    Public Async Function StopServerAsync() As Task
+        Try
+            _cts?.Cancel()
+            _listener?.Stop()
+            _cts?.Dispose()
+        Catch ex As Exception
+            ' 중지 시 예외 무시
+        End Try
+
+        RaiseEvent LogOccurred("[서버] 서버가 중지되었습니다.", "KioskLog.log")
+
+        Await Task.Yield()
+    End Function
+
 End Class
