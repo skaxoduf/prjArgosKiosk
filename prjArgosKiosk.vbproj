@@ -6,7 +6,13 @@
     <StartupObject>prjArgosKiosk.My.MyApplication</StartupObject>
     <UseWindowsForms>true</UseWindowsForms>
     <MyType>WindowsForms</MyType>
+    <ApplicationIcon>bin\Release\net8.0-windows\icon\Argos\Argos_Title_Real.ico</ApplicationIcon>
+    <AssemblyName>ArgosAPTKiosk</AssemblyName>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="bin\Release\net8.0-windows\icon\Argos\Argos_Title_Real.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <Import Include="System.Data" />
@@ -26,6 +32,19 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Application.myapp</DependentUpon>
     </Compile>
+    <Compile Update="My Project\Resources.Designer.vb">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="My Project\Resources.resx">
+      <CustomToolNamespace>My.Resources</CustomToolNamespace>
+      <Generator>VbMyResourcesResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.vb</LastGenOutput>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

@@ -50,6 +50,27 @@ Public Class DbConnectionInfo
     <JsonPropertyName("sPassword")>
     Public Property Password As String
 End Class
+' 포스 정보 받아오는 클래스 항목
+Public Class GetPosInfoAsyncApiResponse
+    <JsonPropertyName("intResult")>
+    Public Property IntResult As Integer
+
+    <JsonPropertyName("strResult")>
+    Public Property StrResult As String
+
+    <JsonPropertyName("POS_NAME")>
+    Public Property PosName As String
+
+    <JsonPropertyName("POS_TYPE")>
+    Public Property PosType As Integer
+
+    <JsonPropertyName("POS_IP")>
+    Public Property PosIp As String
+
+    <JsonPropertyName("POS_PORT")>
+    Public Property PosPort As String
+
+End Class
 Public Class DataReceivedEventArgs
     Inherits EventArgs
 
