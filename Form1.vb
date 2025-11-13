@@ -16,19 +16,85 @@ Imports Microsoft.Web.WebView2.Core
 
 Public Class Form1
 
+    Private listenerHttp As New HttpListener()  ' 키오스크에서는 http리스너를 사용하지않는다. 게이트데몬에서 사용해서 키오스크로 TCP 소켓으로 보낸다.
     Private Shared ReadOnly client As HttpClient = New HttpClient()
 
     Private gFormGb As String
     Private sTestYN As Boolean = True   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
 
-    Private gPort As String
+    Private gPosPort As String
     Private listener As TcpListener
     Private cts As CancellationTokenSource
     Private connectedClients As New List(Of TcpClient)
 
-
-
     Private Async Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+
+        ' 폼 로드
+        Await subFormLoad()
+
+        ' 1. 포트 번호가 비어있는지 먼저 확인
+        If String.IsNullOrEmpty(gPosPort) Then
+            MessageBox.Show("포트 번호가 설정되지 않아 서버를 시작할 수 없습니다.", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return ' 포트가 없으면 서버 시작 로직을 중단
+        End If
+
+        ' 키오스크는 무조건 TCP 소켓 대기만 한다.
+        cts = New CancellationTokenSource()
+        Try
+            listener = New TcpListener(IPAddress.Any, CInt(gPosPort))
+            listener.Start()
+            Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)  ' Await 형식을 사용하면 폼로드에 심각한 오류가 발생할수 있다.
+            WriteLog($"TCP 서버 시작 성공 (Port: {gPosPort})", "KioskLog.log")
+        Catch ex As SocketException
+            WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
+            MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Catch ex As Exception
+            WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
+            MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+
+
+        ' 2. 인증타입에 따라 분기처리
+        ' kiosk가 직접 대기하지않고 게이트데몬에서 받아서 처리한다. 
+        'Select Case gAuthType
+
+        '    Case 2 ' 유니온 안면장비
+        '        cts = New CancellationTokenSource()
+        '        Try
+        '            listener = New TcpListener(IPAddress.Any, CInt(gPosPort))
+        '            listener.Start()
+        '            Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)  ' Await 형식을 사용하면 폼로드에 심각한 오류가 발생할수 있다.
+        '            WriteLog($"TCP 서버 시작 성공 (Port: {gPosPort})", "KioskLog.log")
+        '        Catch ex As SocketException
+        '            WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
+        '            MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        '        Catch ex As Exception
+        '            WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
+        '            MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        '        End Try
+
+        '    Case 3 ' HttpListener 방식 (유엘루트)
+        '        Try
+        '            listenerHttp.Prefixes.Add($"http://+:{gPosPort}/kiosk/")
+        '            listenerHttp.Start()
+        '            listenerHttp.BeginGetContext(AddressOf OnRequestReceived, listenerHttp)
+        '            WriteLog($"HTTP 서버 시작 성공 (Port: {gPosPort})", "KioskLog.log")
+
+        '        Catch ex As Exception
+        '            WriteLog($"HTTP 서버 시작 오류 (Port: {gPosPort}): {ex.Message}", "KioskLog.log")
+        '            MessageBox.Show($"HTTP 서버 시작 실패: {ex.Message}{vbCrLf}프로그램을 관리자 권한으로 실행했는지, 방화벽을 해제했는지 확인바랍니다.",
+        '                    "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        '        End Try
+        'End Select
+
+
+    End Sub
+    Private Async Function subFormLoad() As Task
+
+        ' 현재 모니터 해상도 가져오기
+        Dim screenWidth As Integer = Screen.PrimaryScreen.Bounds.Width
+        Dim screenHeight As Integer = Screen.PrimaryScreen.Bounds.Height
+        Dim posInfo As GetPosInfoAsyncApiResponse = Nothing
 
 
         If sTestYN = True Then  ' 테스트 환경
@@ -48,71 +114,42 @@ Public Class Form1
         WebView21.Visible = True
         pnlCSMain.Visible = False
 
-
-        ' 설정파일 읽기
-        Await subFormLoad()
-
-        ' 소켓 대기
-        If gPort <> "" Then
-            cts = New CancellationTokenSource()
-            Try
-                listener = New TcpListener(IPAddress.Any, gPort)
-                listener.Start()
-                Await Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)
-            Catch ex As SocketException
-                WriteLog($"서버 시작 오류: {ex.Message}", "KioskLog.log")
-            Catch ex As Exception
-                WriteLog($"오류: {ex.Message}", "KioskLog.log")
-            Finally
-                StopServer()
-            End Try
-        Else
-            'WriteLog("포트 번호가 설정되지 않아 소켓 서버를 시작할 수 없습니다.", "KioskLog.log")
-            MessageBox.Show("포트 번호가 설정되지 않아 소켓 서버를 시작할 수 없습니다.", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End If
-
-    End Sub
-    Private Async Function subFormLoad() As Task
-
-        ' 현재 모니터 해상도 가져오기
-        Dim screenWidth As Integer = Screen.PrimaryScreen.Bounds.Width
-        Dim screenHeight As Integer = Screen.PrimaryScreen.Bounds.Height
-        Dim posInfo As GetPosInfoAsyncApiResponse = Nothing
-
+        ' ini 파일에서 설정값 읽어오기
         If Config_Load() = False Then
             gFormGb = "C"
         Else
             gFormGb = "W"
         End If
 
-        If gCompanyCode <> "" Then
+        If gCompanyCode <> "" And gPosNo <> "" Then
             ' DB정보 요청 
             Await FetchDbInfoAndProcessAsync()
+
             ' 업체 정보 요청 (지문, 안면 등..인증방식 여부를 받아오기 위해)
             Await FetchCompanyInfoAsync(gCompanyIdx, gCompanyCode)
 
-            ' 포스번호를 가지고 포스의 기타 정보를 받아온다.
+            ' 포스번호를 가지고 포스정보를 받아온다.
             posInfo = Await GetPosInfoAsync(gCompanyIdx, gCompanyCode, gPosNo)
             If posInfo IsNot Nothing AndAlso posInfo.IntResult = 1 Then
-                gPort = posInfo.PosPort
+                gPosPort = posInfo.PosPort
             End If
+
+            ' 시리얼 포트번호가 있으면 시리얼에 연결한다.
+            If IsNumeric(gSeralPortNo) = True Then
+                modFunc.ConnectSerialPort("COM" + gSeralPortNo, 9600)
+                AddHandler modFunc.serialPort.DataReceived, AddressOf HandleSerialData
+            End If
+
+            ' 키오스크 대기화면 웹뷰 로딩
+            Dim url As String = $"{gUrl}kiosk/{gCompanyCode}/"
+            Await WebView21.EnsureCoreWebView2Async(Nothing)
+
+            WebView21.Width = Me.ClientSize.Width
+            WebView21.Height = Me.ClientSize.Height
+            WebView21.Source = New Uri(url)
+
         End If
 
-
-        ' 시리얼 포트번호가 있으면 시리얼에 연결한다.
-        If IsNumeric(gSeralPortNo) = True Then
-            modFunc.ConnectSerialPort("COM" + gSeralPortNo, 9600)
-            AddHandler modFunc.serialPort.DataReceived, AddressOf HandleSerialData
-        End If
-
-
-        ' 아래주소는 키오스크 대기화면 주소로 변경해야함..
-        Dim url As String = $"{gUrl}login/"  ' Dim url As String = "http://julist.webpos.co.kr/login/"
-        Await WebView21.EnsureCoreWebView2Async(Nothing)
-
-        WebView21.Width = Me.ClientSize.Width
-        WebView21.Height = Me.ClientSize.Height
-        WebView21.Source = New Uri(url)
 
         ' CS 웹뷰는 폼 로딩될때 자바스크립트로부터 수신받을 준비를 한다.
         RemoveHandler WebView21.WebMessageReceived, AddressOf WebView21_WebMessageReceived
@@ -140,12 +177,11 @@ Public Class Form1
 
                 Select Case methodName
                     Case "Get_WebPosInfo"
-                        Await Get_WebPosInfo() '웹포스가 설치된 pc의 ini 파일을 호출하는 함수
+                        Await Get_WebPosInfo() 'CS가 설치된 pc의 ini 파일을 호출하는 함수
 
                     Case "Bas_ConfigLoad"
-                        Await Bas_ConfigLoad() '단지코드와 포스번호를 입력받는 설정창을 표시해주는 함수
+                        Await Bas_ConfigLoad() '업체코드와 포스번호를 입력받는 설정창을 표시해주는 함수
 
-                    Case Else
                 End Select
             End If
         Catch ex As Exception
@@ -166,7 +202,7 @@ Public Class Form1
         Dim sPosNo As String = gPosNo.Replace("'", "\'")
         Dim sCompanyCode As String = gCompanyCode.Replace("'", "\'")
 
-        ' 웹에다가 단지코드와 포스번호를 받는 함수(fnCsWebPosInfoGetter)에 던진다.
+        ' 웹에다가 업체코드와 포스번호를 받는 함수에 던진다.
         Dim jsCode As String = $"$.fnCsWebPosInfoGetter('{sPosNo}', '{sCompanyCode}');"
         Await WebView21.ExecuteScriptAsync(jsCode)
 
@@ -257,7 +293,7 @@ Public Class Form1
 
             Dim response As CompanyApiResponse = JsonSerializer.Deserialize(Of CompanyApiResponse)(cleanJsonStr)
             If response IsNot Nothing AndAlso response.IntResult = 1 AndAlso response.JsonData.Count > 0 Then
-                Dim authType As Integer = response.JsonData(0).AuthType
+                gAuthType = response.JsonData(0).AuthType
             End If
 
         Catch ex As Exception
@@ -348,7 +384,7 @@ Public Class Form1
 
                                 Dim responseMessage As String
 
-                                If message.StartsWith("ARGOS|", StringComparison.OrdinalIgnoreCase) Then
+                                If message.StartsWith("ARGOS|", StringComparison.OrdinalIgnoreCase) Then ' ARGOS|022405130012375D|180
                                     Dim parts As String() = message.Split("|")
                                     If parts.Length >= 3 Then
                                         Dim memIdx As String = parts(2).Trim()   ' ARGOS|022405130012375D|180
@@ -390,6 +426,111 @@ Public Class Form1
         WriteLog($"클라이언트 연결 종료", "KioskLog.log")
 
     End Function
+    Private Async Sub OnRequestReceived(ByVal result As IAsyncResult)
+        ' HTTP 수신 
+        If Not listenerHttp.IsListening Then Return
+
+        Dim context As HttpListenerContext
+        Try
+            context = listenerHttp.EndGetContext(result)
+        Catch ex As ObjectDisposedException
+            Return
+        Catch ex As System.Net.HttpListenerException
+            Return
+        Catch ex As Exception
+            WriteLog($"EndGetContext 오류: {ex.Message}", "KioskLog.log")
+            Return
+        End Try
+
+        listenerHttp.BeginGetContext(AddressOf OnRequestReceived, listenerHttp)
+
+        ' --- ASP의 요청 및 응답 처리 ---
+        Dim request As HttpListenerRequest = context.Request
+        Dim response As HttpListenerResponse = context.Response
+
+        Dim responseMessage As String = "ERROR: 알 수없는 에러"
+        Dim statusCode As Integer = 500 ' Internal Server Error (기본값)
+        Dim message As String = "" ' 웹에서 보낸 전문
+
+        Try
+            ' 웹에서 POST로 보낸 전문 데이터(Body)를 읽는다.
+            Using reader As New StreamReader(request.InputStream, request.ContentEncoding)
+                message = Await reader.ReadToEndAsync()
+            End Using
+
+            If String.IsNullOrEmpty(message) Then
+                statusCode = 400 ' Bad Request
+                responseMessage = "ERROR: 수신 데이타가 존재하지않음."
+            Else
+                WriteLog($"HTTP 전문 수신: {message}", "KioskLog.log")
+
+                ' 수신받은 전문 파싱 
+                If message.StartsWith("ARGOS|", StringComparison.OrdinalIgnoreCase) Then
+                    Dim parts As String() = message.Split("|")
+                    If parts.Length >= 3 Then
+                        Dim memIdx As String = parts(2).Trim()
+
+                        ' UI 스레드로 웹뷰 호출
+                        Try
+                            Dim uiTask As Task = CType(Me.Invoke(Function()
+                                                                     Return SendMemIDXToWebView(memIdx, gCompanyCode)
+                                                                 End Function), Task)
+                            Await uiTask
+
+                            ' 성공 응답 생성
+                            responseMessage = "SUCCESS" & message.Substring("ARGOS".Length)
+                            statusCode = 200
+
+                        Catch ex As Exception
+                            WriteLog($"웹뷰 호출 오류 (memIdx: {memIdx}): {ex.Message}", "KioskLog.log")
+                            responseMessage = "ERROR: Exception 에러"
+                            statusCode = 500
+                        End Try
+                    Else
+                        WriteLog($"전문 파싱 오류: {message}", "KioskLog.log")
+                        responseMessage = $"ERROR: 잘못된 전문 포맷 ({message})"
+                        statusCode = 400 ' Bad Request
+                    End If
+                Else  ' 이 부분은 혹시모르니 남겨놓는다. MEM_IDX만 날라왔을경우 
+                    Dim memIdx As String = message.Trim()
+                    WriteLog($"HTTP 단순 수신: {memIdx}", "KioskLog.log")
+                    Try
+                        Dim uiTask As Task = CType(Me.Invoke(Function()
+                                                                 Return SendMemIDXToWebView(memIdx, gCompanyCode)
+                                                             End Function), Task)
+                        Await uiTask
+                        responseMessage = "SUCCESS"
+                        statusCode = 200
+                    Catch ex As Exception
+                        WriteLog($"웹뷰 호출 오류 (memIdx: {memIdx}): {ex.Message}", "KioskLog.log")
+                        responseMessage = "ERROR: UI processing failed."
+                        statusCode = 500
+                    End Try
+                End If
+            End If
+
+        Catch ex As Exception
+            WriteLog($"HTTP 처리 오류 : {ex.Message}", "KioskLog.log")
+            responseMessage = $"ERROR: HTTP 프로세스 실패. {ex.Message}"
+            statusCode = 500
+        Finally
+            Try
+                Dim responseBytes = Encoding.UTF8.GetBytes(responseMessage)
+                response.StatusCode = statusCode
+                response.ContentLength64 = responseBytes.Length
+                response.OutputStream.Write(responseBytes, 0, responseBytes.Length)
+            Catch ex As Exception
+                WriteLog($"HTTP 응답 전송 오류: {ex.Message}", "KioskLog.log")
+            Finally
+                response.OutputStream.Close()
+            End Try
+
+            If statusCode = 200 Then
+                WriteLog($"클라이언트로 전송: {responseMessage}", "KioskLog.log")
+            End If
+        End Try
+
+    End Sub
 
     ' 서버 중지 로직
     Private Sub StopServer()
@@ -419,8 +560,21 @@ Public Class Form1
 
     ' 폼이 닫힐 때 서버가 실행 중이면 중지
     Private Sub Form1_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
-        cts?.Cancel()
-        listener?.Stop()
+
+        ' 1. TCP 서버(listener)가 실행 중이면 중지
+        If listener IsNot Nothing Then
+            cts?.Cancel()
+            listener.Stop()
+            WriteLog("TCP 서버 중지됨.", "KioskLog.log")
+        End If
+
+        ' 2. HTTP 서버(listenerHttp)가 실행 중이면 중지
+        If listenerHttp IsNot Nothing AndAlso listenerHttp.IsListening Then
+            listenerHttp.Stop()
+            listenerHttp.Close()
+            WriteLog("HTTP 서버 중지됨.", "KioskLog.log")
+        End If
+
     End Sub
 
     ' 시리얼 포트에서 데이터가 수신될 때 호출될 이벤트 핸들러

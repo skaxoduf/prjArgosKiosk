@@ -11,6 +11,7 @@
     Public gCompanyIdx As String
     Public gCompanyCode As String
     Public gSeralPortNo As String
+    Public gAuthType As Integer
 
     ' 디비접속정보 전역변수 (Form1이 로딩될때 웹에서 Json으로 정보를 받아와 이 변수에 담는다.)
     Public gServer As String
