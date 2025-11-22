@@ -10,6 +10,7 @@
     Public gPosNo As String
     Public gCompanyIdx As String
     Public gCompanyCode As String
+    Public gTimer As String
     Public gSeralPortNo As String
     Public gAuthType As Integer
 

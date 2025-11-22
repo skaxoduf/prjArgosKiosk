@@ -4,6 +4,7 @@ Imports System.IO.Ports
 Imports System.Net
 Imports System.Net.Http
 Imports System.Net.Sockets
+Imports System.Security.Policy
 Imports System.Text
 Imports System.Text.Json
 Imports System.Text.RegularExpressions
@@ -19,6 +20,7 @@ Public Class Form1
     Private listenerHttp As New HttpListener()  ' 키오스크에서는 http리스너를 사용하지않는다. 게이트데몬에서 사용해서 키오스크로 TCP 소켓으로 보낸다.
     Private Shared ReadOnly client As HttpClient = New HttpClient()
 
+
     Private gFormGb As String
     Private sTestYN As Boolean = True   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
 
@@ -29,21 +31,49 @@ Public Class Form1
 
     Private Async Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
 
+        ' 유니락 발권 테스트 버튼 보이기
+        ' Button1.Visible = True
+
+        ' 현재 모니터 해상도 가져오기
+        Dim screenWidth As Integer = Screen.PrimaryScreen.Bounds.Width
+        Dim screenHeight As Integer = Screen.PrimaryScreen.Bounds.Height
+
+        ' 폼 크기 설정
+        Me.Width = screenWidth
+        Me.Height = screenHeight
+        Me.WindowState = FormWindowState.Maximized
+
+        WebView21.Left = 0
+        WebView21.Top = 0
+
+        Await subFormInutialize()
+
+    End Sub
+    Private Async Function subFormInutialize() As Task
+
         ' 폼 로드
         Await subFormLoad()
 
-        ' 1. 포트 번호가 비어있는지 먼저 확인
+        ' 업체코드 확인
+        If String.IsNullOrEmpty(gCompanyCode) Then
+            WriteLog("업체코드가 설정되지 않아 프로그램을 시작 하지 않습니다.", "KioskLog.log")
+            Return
+        End If
+
+        WebView21.Visible = True
+
+        ' 포트 번호가 비어있는지 먼저 확인
         If String.IsNullOrEmpty(gPosPort) Then
             MessageBox.Show("포트 번호가 설정되지 않아 서버를 시작할 수 없습니다.", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
             Return ' 포트가 없으면 서버 시작 로직을 중단
         End If
 
-        ' 키오스크는 무조건 TCP 소켓 대기만 한다.
+        ' 키오스크는 무조건 TCP 소켓 대기만 한다. 게이트 데몬으로부터 전문을 받아서 처리한다.
         cts = New CancellationTokenSource()
         Try
             listener = New TcpListener(IPAddress.Any, CInt(gPosPort))
             listener.Start()
-            Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)  ' Await 형식을 사용하면 폼로드에 심각한 오류가 발생할수 있다.
+            Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)
             WriteLog($"TCP 서버 시작 성공 (Port: {gPosPort})", "KioskLog.log")
         Catch ex As SocketException
             WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
@@ -52,6 +82,9 @@ Public Class Form1
             WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
             MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
+
+
+
 
 
         ' 2. 인증타입에 따라 분기처리
@@ -88,30 +121,30 @@ Public Class Form1
         'End Select
 
 
-    End Sub
+
+
+    End Function
     Private Async Function subFormLoad() As Task
 
         ' 현재 모니터 해상도 가져오기
         Dim screenWidth As Integer = Screen.PrimaryScreen.Bounds.Width
         Dim screenHeight As Integer = Screen.PrimaryScreen.Bounds.Height
         Dim posInfo As GetPosInfoAsyncApiResponse = Nothing
-
+        Dim url As String
 
         If sTestYN = True Then  ' 테스트 환경
             Me.Width = 1080
             Me.Height = 1920
             Me.WindowState = FormWindowState.Normal
             Me.StartPosition = FormStartPosition.CenterScreen
-        Else   ' 배포 환경
+        Else   ' 리얼 환경
             ' 폼 최대화
             Me.WindowState = FormWindowState.Maximized
             ' 폼 상단바 제거
             Me.FormBorderStyle = FormBorderStyle.None
         End If
 
-
-        ' 초기화면은 웹뷰만 보이도록
-        WebView21.Visible = True
+        WebView21.Visible = False
         pnlCSMain.Visible = False
 
         ' ini 파일에서 설정값 읽어오기
@@ -141,26 +174,27 @@ Public Class Form1
             End If
 
             ' 키오스크 대기화면 웹뷰 로딩
-            Dim url As String = $"{gUrl}kiosk/{gCompanyCode}/"
-            Await WebView21.EnsureCoreWebView2Async(Nothing)
-
-            WebView21.Width = Me.ClientSize.Width
-            WebView21.Height = Me.ClientSize.Height
-            WebView21.Source = New Uri(url)
-
+            url = $"{gUrl}kiosk/{gCompanyCode}/"
+        Else
+            ' 설정이 안되어 있으면 로그인 화면으로 보낸다.
+            url = $"{gUrl}login/"
         End If
 
+
+        Await WebView21.EnsureCoreWebView2Async(Nothing)
+        WebView21.Width = Me.ClientSize.Width
+        WebView21.Height = Me.ClientSize.Height
+        WebView21.Source = New Uri(url)
 
         ' CS 웹뷰는 폼 로딩될때 자바스크립트로부터 수신받을 준비를 한다.
         RemoveHandler WebView21.WebMessageReceived, AddressOf WebView21_WebMessageReceived
         AddHandler WebView21.WebMessageReceived, AddressOf WebView21_WebMessageReceived
 
-        ' 폼 로딩될때 CS 웹뷰는 자바스크립트에다가 아무 액션도 하지 않는다.
-        ' 테스트시 주석해제 , 배포시 주석처리
         'RemoveHandler WebView21.NavigationCompleted, AddressOf WebView_NavigationCompleted
         'AddHandler WebView21.NavigationCompleted, AddressOf WebView_NavigationCompleted
 
     End Function
+
     Private Async Sub WebView21_WebMessageReceived(sender As Object, e As CoreWebView2WebMessageReceivedEventArgs)
         Try
             Dim receivedJson As String = e.WebMessageAsJson
@@ -182,6 +216,43 @@ Public Class Form1
                     Case "Bas_ConfigLoad"
                         Await Bas_ConfigLoad() '업체코드와 포스번호를 입력받는 설정창을 표시해주는 함수
 
+                    Case "Bas_LockerBalGwon"
+
+                        Dim sBalGwonJangbiType As String = ""   '유니락/ 이에스택 구분값  (2 : 이에스택, 1 : 유니락)
+                        Dim sBalGwonJangbiIp As String = ""     '전자락 아이피 ex) 192.168.0.242
+                        Dim sBalGwonJangbiPort As String = ""   '전자락 포트 ex) 33001
+                        Dim sBalGwonHmClass As String = ""      '성별구분(0: 남자대인, 1 : 남자소인, 2: 여자대인, 3: 여자소인)
+                        Dim sMemIdx As String = ""
+                        Dim sGongDongGwaGeumIDX As String = ""
+
+                        If data.TryGetProperty("BalGwon_Jangbi_Type", Nothing) Then
+                            sBalGwonJangbiType = data.GetProperty("BalGwon_Jangbi_Type").GetInt64
+                        End If
+                        If data.TryGetProperty("BalGwon_Jangbi_Ip", Nothing) Then
+                            sBalGwonJangbiIp = data.GetProperty("BalGwon_Jangbi_Ip").GetString()
+                        End If
+                        If data.TryGetProperty("BalGwon_Jangbi_Port", Nothing) Then
+                            sBalGwonJangbiPort = data.GetProperty("BalGwon_Jangbi_Port").GetString()
+                        End If
+                        If data.TryGetProperty("BalGwon_Hm_Class", Nothing) Then
+                            sBalGwonHmClass = data.GetProperty("BalGwon_Hm_Class").GetInt64
+                        End If
+                        If data.TryGetProperty("Mem_Idx", Nothing) Then
+                            sMemIdx = data.GetProperty("Mem_Idx").GetString
+                        End If
+                        If data.TryGetProperty("GongDongGwaGeum_IDX", Nothing) Then
+                            sGongDongGwaGeumIDX = data.GetProperty("GongDongGwaGeum_IDX").GetInt64
+                        End If
+
+                        'sBalGwonJangbiType = "1"
+                        'sBalGwonJangbiIp = "192.168.0.242"
+                        'sBalGwonJangbiPort = "33000"
+                        'sBalGwonHmClass = "0"
+                        'sMemIdx = "250"
+                        'sGongDongGwaGeumIDX = "1"
+
+                        Await Bas_LockerBalGwon(sBalGwonJangbiType, sBalGwonJangbiIp, sBalGwonJangbiPort, sBalGwonHmClass, sMemIdx, sGongDongGwaGeumIDX)
+
                 End Select
             End If
         Catch ex As Exception
@@ -189,10 +260,144 @@ Public Class Form1
                             "오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
-    Public Async Function Get_WebPosInfo() As Task
+    Public Async Function Bas_LockerBalGwon(ByVal sBalGwonJangbiType As String, ByVal sBalGwonJangbiIp As String,
+                                            ByVal sBalGwonJangbiPort As String, ByVal sBalGwonHmClass As String,
+                                            ByVal sMemIdx As String, ByVal sGongDongGwaGeumIDX As String) As Task
 
-        WebView21.Visible = True
-        pnlCSMain.Visible = False
+        Try
+            Dim lockerNum As String = ""
+            Select Case sBalGwonJangbiType
+                Case "1" ' 유니락
+                    lockerNum = Await Task.Run(Function()
+                                                   Return BAS_UniLocker(sBalGwonHmClass, sBalGwonJangbiIp, sBalGwonJangbiPort)
+                                               End Function)
+
+                Case "2" ' 이에스택
+
+                    ' 구현해야함,,,,,
+
+                    Return
+                Case Else
+                    WriteLog($"정의되지 않은 락카 장비 타입코드 ::: (Type: {sBalGwonJangbiType})", "KioskLog.log")
+                    Return
+            End Select
+
+            If Not String.IsNullOrEmpty(lockerNum) Then
+                Await SendLockerNumToWebView(lockerNum, Get_BalGwonHmClassName(sBalGwonHmClass))
+                Dim nLocker As Integer
+                If Integer.TryParse(lockerNum, nLocker) Then
+                    ' 발권번호가 정상일때만 저장 api호출
+                    Await SendLockerBalGwonHistoryInsertJson(sMemIdx, sGongDongGwaGeumIDX, sBalGwonHmClass, 1, lockerNum, 1, "공동과금 전자락카 자동 발권")
+                End If
+            Else
+                WriteLog($"발권 실패: {lockerNum}", "KioskLog.log")
+            End If
+        Catch ex As Exception
+            WriteLog($"발권 프로세스 오류: " & ex.Message, "KioskLog.log")
+        End Try
+
+    End Function
+    Public Async Function SendLockerNumToWebView(lockerNum As String, hmClassStr As String) As Task
+        Try
+            Dim jsCode As String = $"$.fnCsToWebCallLockerNumResult('{lockerNum}', '{hmClassStr}');"
+            If WebView21 IsNot Nothing AndAlso WebView21.CoreWebView2 IsNot Nothing Then
+                Await WebView21.CoreWebView2.ExecuteScriptAsync(jsCode)
+            End If
+        Catch ex As Exception
+            WriteLog($"웹뷰 통신 중 오류: " & ex.Message, "KioskLog.log")
+        End Try
+    End Function
+    Private Function BAS_UniLocker(hmclass As String, ip As String, port As String) As String
+        Try
+            Dim packet() As Byte = BAS_SUB_UniLocker(hmclass)
+
+            Using client As New TcpClient(ip, Integer.Parse(port))
+                Using stream As NetworkStream = client.GetStream()
+                    stream.Write(packet, 0, packet.Length)
+
+                    Dim buffer(255) As Byte
+                    Dim bytesRead As Integer = stream.Read(buffer, 0, buffer.Length)
+
+                    If bytesRead > 0 Then
+                        Return ParseLockerNumber(buffer)
+                    Else
+                        Return "발권 실패"
+                    End If
+                End Using
+            End Using
+        Catch ex As Exception
+            Return "Error: " & ex.Message
+        End Try
+    End Function
+    Private Function ParseLockerNumber(responseBytes() As Byte) As String
+        Try
+            ' 24~28번째 바이트 (5자리 번호)
+            Dim lockerNum As String = Encoding.ASCII.GetString(responseBytes, 24, 5)
+            lockerNum = lockerNum.TrimStart("0"c)
+            If String.IsNullOrEmpty(lockerNum) Then
+                Return "Error: Empty"
+            End If
+            Return lockerNum
+        Catch ex As Exception
+            Return "Error: Parse Fail"
+        End Try
+    End Function
+    Private Function BAS_SUB_UniLocker(hmclass As String) As Byte()
+        Dim packet As New List(Of Byte)
+        Dim userId As String = "USER1"    ' 발권요청한 아이디인데 그냥 붙박이 
+        Dim userIdBytes As Byte() = Encoding.ASCII.GetBytes(userId)
+
+        ' Header
+        packet.Add(&H70) ' Version
+        packet.Add(&H41) ' Command
+        packet.Add(&HFF) ' Address
+        packet.Add(&HFF)
+        packet.Add(&HFF)
+        packet.Add(&HFF) ' Encryption(스펙상 0xFF/0x00 둘다 허용. 0xFF 많이 사용)
+        packet.AddRange(Encoding.ASCII.GetBytes("00037"))    ' Length (5자리)  '' 자동발권은 37이 그냥 고정 붙박이다.
+        packet.AddRange(Encoding.ASCII.GetBytes("POS1"))     ' 발권하는 포스명칭인데 그냥 붙박이 
+
+        ' User ID (예: "USER1" + 패딩)
+
+
+        packet.AddRange(userIdBytes)
+        For i = userIdBytes.Length To 19
+            packet.Add(&H0)
+        Next
+
+        ' CheckInCondition (1번그룹)
+        packet.Add(&H30)
+
+        ' CheckInDataCount (자동발권 요청 데이터 수량, 4자리)
+        packet.AddRange(Encoding.ASCII.GetBytes("0001"))    ' 이것도 자동발권일때는 발권요청수량으로 쓰인다. 밑에꺼랑 같음..그냥 1로 붙박이..
+
+        ' 발권 요청수량 
+        packet.AddRange(Encoding.ASCII.GetBytes("00001"))
+
+        ' HumanClass (분기처리)
+        Select Case hmclass
+            Case "0"  ' 남자대인
+                packet.Add(&H30)
+            Case "1"  ' 남자소인
+                packet.Add(&H31)
+            Case "2"  ' 여자대인
+                packet.Add(&H32)
+            Case "3"  ' 여자소인
+                packet.Add(&H33)
+            Case Else
+                packet.Add(&H30)
+        End Select
+
+        ' CheckInGroup (0: 0번그룹)
+        packet.Add(&H30)
+
+        ' CheckInType (1: 사우나)
+        packet.Add(&H31)
+
+        ' 총 바이트 48바이트가 되어야 정상
+        Return packet.ToArray()
+    End Function
+    Public Async Function Get_WebPosInfo() As Task
 
         ' webpos가 설치된 곳의 ini 파일을 읽어오는 함수 
         gAppPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.ExecutablePath), INI_FILENAME)
@@ -216,8 +421,11 @@ Public Class Form1
         gAppPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.ExecutablePath), INI_FILENAME)
         gPosNo = GetIni("Settings", "PosNo", gAppPath)
         gCompanyCode = GetIni("Settings", "CompanyCode", gAppPath)
+        gTimer = GetIni("Settings", "Timer", gAppPath)
+
         txtPosNo.Text = gPosNo
         txtCompanyCode.Text = gCompanyCode
+        txtTimer.Text = gTimer
 
     End Function
     Private Async Function GetPosInfoAsync(ByVal companyIdx As String, ByVal companyCode As String, ByVal pos_no As String) As Task(Of GetPosInfoAsyncApiResponse)
@@ -301,6 +509,60 @@ Public Class Form1
         End Try
 
     End Function
+    Private Async Function SendLockerBalGwonHistoryInsertJson(memIdx As String,
+                                                          orderDetailInfoIdx As String,
+                                                          balgwonClssType As String,
+                                                          balgwonType As String,
+                                                          balgwonKeyNo As String,
+                                                          balgwonChkType As String,
+                                                          ordermsg As String) As Task
+
+        Try
+            Dim encodedOrderMsg As String = System.Web.HttpUtility.UrlEncode(ordermsg)
+            'http://julist.webpos.co.kr/api/cs/LockerBalGwonHistory_Insert.asp?company_code=022405130012375D&mem_idx=180&order_detail_info_idx=151&balgwon_clss_type=0&balgwon_type=1&balgwon_key_no=52&balgwon_chk_type=1&order_msg=강좌 이용 락카 자동 발권
+            Dim apiUrl As String = $"{gUrl}api/cs/LockerBalGwonHistory_Insert.asp?" &
+                               $"company_code={gCompanyCode}&" &
+                               $"mem_idx={memIdx}&" &
+                               $"order_detail_info_idx={orderDetailInfoIdx}&" &
+                               $"balgwon_clss_type={balgwonClssType}&" &
+                               $"balgwon_type={balgwonType}&" &
+                               $"balgwon_key_no={balgwonKeyNo}&" &
+                               $"balgwon_chk_type={balgwonChkType}&" &
+                               $"order_msg={encodedOrderMsg}"
+
+            ' API 호출
+            Dim response As HttpResponseMessage = Await client.GetAsync(apiUrl)
+            If response.IsSuccessStatusCode Then
+                Dim responseBody = Await response.Content.ReadAsStringAsync()
+                Try
+                    Dim options As New JsonSerializerOptions With {
+                    .PropertyNameCaseInsensitive = True
+                }
+                    Dim apiResult As LockerHistoryApiResponse = JsonSerializer.Deserialize(Of LockerHistoryApiResponse)(responseBody, options)
+                    '{"intResult":1,"strResult":"발권내역을 정상적으로 등록하였습니다.","JSON_DATA":[{"INSERTED_BALGWON_IDX":1,"AUTH_MESSAGE":"공동과금 전자락카 자동 발권"}]}
+                    If apiResult IsNot Nothing AndAlso apiResult.IntResult = 1 Then
+                        Dim logMsg As String = $"락카 이력 저장 성공: {apiResult.StrResult}"
+                        If apiResult.JsonData IsNot Nothing AndAlso apiResult.JsonData.Count > 0 Then
+                            Dim newIdx As Integer = apiResult.JsonData(0).InsertedBalgwonIdx
+                            logMsg &= $" (생성된 IDX: {newIdx}, KeyNo: {balgwonKeyNo})"
+                        End If
+                        WriteLog(logMsg, "KioskLog.log")
+                    Else
+                        Dim failMsg As String = If(apiResult IsNot Nothing, apiResult.StrResult, "응답 내용 없음")
+                        WriteLog($"락카 이력 저장 실패(API반환): {failMsg}", "KioskLog.log")
+                    End If
+
+                Catch jsonEx As Exception
+                    WriteLog($"락카 이력 응답 파싱 에러: {jsonEx.Message} / 원본: {responseBody}", "KioskLog.log")
+                End Try
+            Else
+                WriteLog($"락카 이력 전송 통신 실패: {response.StatusCode}", "KioskLog.log")
+            End If
+        Catch ex As Exception
+            WriteLog($"락카 이력 전송 중 예외 발생: {ex.Message}", "KioskLog.log")
+        End Try
+
+    End Function
     Private Function Config_Load() As Boolean
 
         Config_Load = True
@@ -310,8 +572,12 @@ Public Class Form1
             gCompanyCode = GetIni("Settings", "CompanyCode", gAppPath)
             gSeralPortNo = GetIni("Settings", "SerialPortNo", gAppPath)
             gUrl = GetIni("Settings", "Url", gAppPath)
+            gTimer = GetIni("Settings", "Timer", gAppPath)
+            If IsNumeric(gTimer) = False Then
+                gTimer = "30"
+            End If
 
-            If IsNumeric(gPosNo) = False Or gCompanyCode = "" Then
+            If IsNumeric(gPosNo) = False Or gCompanyCode = "" Or gUrl = "" Then
                 'MessageBox.Show("설정이 잘못되었습니다.", "에러", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Config_Load = False
             End If
@@ -330,20 +596,31 @@ Public Class Form1
         '입력받은값 ini 저장후 
         gPosNo = txtPosNo.Text.Trim
         gCompanyCode = txtCompanyCode.Text.Trim
+        gTimer = txtTimer.Text.Trim
 
         PutIni("Settings", "PosNo", gPosNo, gAppPath)
         PutIni("Settings", "CompanyCode", gCompanyCode, gAppPath)
+        PutIni("Settings", "Timer", gTimer, gAppPath)
 
         '다시 웹뷰 로딩
         Await Get_WebPosInfo()
 
+        ' 다시 폼로딩
+        Await subFormInutialize()
+
+        Try
+            ' 로그인화면이 잠깐 보이는걸 방지하기위해 임의의 딜레이를 준다.
+            Await Task.Delay(1500) ' 1.5초
+        Catch ex As Exception
+        End Try
+
     End Sub
 
-    ' 클라이언트 접속을 대기 루프
+    ' 클라이언트 접속을 대기
     Private Async Function AcceptClientsAsync(ByVal token As CancellationToken) As Task
         Try
             While Not token.IsCancellationRequested
-                ' 클라이언트 접속 대기 (비동기)
+                ' 클라이언트 접속 대기 (비동기 방식)
                 Dim client As TcpClient = Await listener.AcceptTcpClientAsync(token)
 
                 ' 클라이언트 접속 성공
@@ -390,7 +667,7 @@ Public Class Form1
                                         Dim memIdx As String = parts(2).Trim()   ' ARGOS|022405130012375D|180
                                         Try
                                             Dim uiTask As Task = CType(Me.Invoke(Function()
-                                                                                     Return SendMemIDXToWebView(memIdx, gCompanyCode)
+                                                                                     Return SendMemIDXToWebView(memIdx, gCompanyCode, gPosNo, gTimer)
                                                                                  End Function), Task)
                                             Await uiTask
                                         Catch ex As Exception
@@ -473,7 +750,7 @@ Public Class Form1
                         ' UI 스레드로 웹뷰 호출
                         Try
                             Dim uiTask As Task = CType(Me.Invoke(Function()
-                                                                     Return SendMemIDXToWebView(memIdx, gCompanyCode)
+                                                                     Return SendMemIDXToWebView(memIdx, gCompanyCode, gPosNo, gTimer)
                                                                  End Function), Task)
                             Await uiTask
 
@@ -496,7 +773,7 @@ Public Class Form1
                     WriteLog($"HTTP 단순 수신: {memIdx}", "KioskLog.log")
                     Try
                         Dim uiTask As Task = CType(Me.Invoke(Function()
-                                                                 Return SendMemIDXToWebView(memIdx, gCompanyCode)
+                                                                 Return SendMemIDXToWebView(memIdx, gCompanyCode, gPosNo, gTimer)
                                                              End Function), Task)
                         Await uiTask
                         responseMessage = "SUCCESS"
@@ -542,11 +819,11 @@ Public Class Form1
         WriteLog($"서버 중지됨", "KioskLog.log")
 
     End Sub
-    Public Async Function SendMemIDXToWebView(memIdx As String, company_code As String) As Task
+    Public Async Function SendMemIDXToWebView(memIdx As String, company_code As String, posno As String, timer As String) As Task
         ' 지문 또는 안면장비에서 수신된 MemIDX를 WebView2로 전송하는 함수
         Try
             ' 페이지 로드가 완료된 후 JavaScript 함수 호출
-            Dim jsCode As String = $"$.fnCsToWebCallMemAuthK('{memIdx}');"  ' 키오스크 웹뷰에 던지는 자바스크립트 함수
+            Dim jsCode As String = $"$.fnCsToWebCallMemAuthK('{company_code}', '{memIdx}', '{posno}', '{timer}');"  ' 키오스크 웹뷰에 던지는 자바스크립트 함수
             If WebView21 IsNot Nothing AndAlso WebView21.CoreWebView2 IsNot Nothing Then
                 Await WebView21.CoreWebView2.ExecuteScriptAsync(jsCode)
             Else
@@ -598,4 +875,38 @@ Public Class Form1
                   End Sub)
     End Sub
 
+    Private Sub btnExit_Click(sender As Object, e As EventArgs) Handles btnExit.Click
+
+        Me.Close()
+
+    End Sub
+
+    Private Sub Form1_Closed(sender As Object, e As EventArgs) Handles Me.Closed
+        frmSplash.Close()
+    End Sub
+
+    Private Async Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
+
+
+        Dim sBalGwonJangbiType As String = ""   '유니락/ 이에스택 구분값  (2 : 이에스택, 1 : 유니락)
+        Dim sBalGwonJangbiIp As String = ""     '전자락 아이피 ex) 192.168.0.242
+        Dim sBalGwonJangbiPort As String = ""   '전자락 포트 ex) 33001
+        Dim sBalGwonHmClass As String = ""      '성별구분(0: 남자대인, 1 : 남자소인, 2: 여자대인, 3: 여자소인)
+        Dim sMemIdx As String = ""
+        Dim sGongDongGwaGeumIDX As String = ""
+
+        sBalGwonJangbiType = "1"
+        sBalGwonJangbiIp = "192.168.0.242"
+        sBalGwonJangbiPort = "31000"  ' 31000이 기본포트이다. 
+        sBalGwonHmClass = "0"
+        sMemIdx = "250"
+        sGongDongGwaGeumIDX = "1"
+
+        Await Bas_LockerBalGwon(sBalGwonJangbiType, sBalGwonJangbiIp, sBalGwonJangbiPort, sBalGwonHmClass, sMemIdx, sGongDongGwaGeumIDX)
+
+
+
+
+
+    End Sub
 End Class

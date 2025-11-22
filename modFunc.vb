@@ -37,6 +37,34 @@ Module modFunc
             'MessageBox.Show("시리얼 포트가 닫혔습니다.", "연결 종료")
         End If
     End Sub
+    Public Function Get_BalGwonHmClassName(hmClass As String) As String
+        Select Case hmClass
+            Case "0"
+                Return "남자대인"
+            Case "1"
+                Return "남자소인"
+            Case "2"
+                Return "여자대인"
+            Case "3"
+                Return "여자소인"
+            Case Else
+                Return "남자대인"
+        End Select
+    End Function
+    Public Function Get_BalGwonHmClassNo(hmClass As String) As String
+        Select Case hmClass
+            Case "남자대인"
+                Return "0"
+            Case "남자소인"
+                Return "1"
+            Case "여자대인"
+                Return "2"
+            Case "여자소인"
+                Return "3"
+            Case Else
+                Return "0"
+        End Select
+    End Function
     Public Sub WriteLog(message As String, Optional baseFileName As String = "ArgosAPT.log")
         ' 1. 타임스탬프가 포함된 전체 로그 메시지 생성
         Dim logEntry As String = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}"

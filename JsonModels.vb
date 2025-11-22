@@ -71,6 +71,30 @@ Public Class GetPosInfoAsyncApiResponse
     Public Property PosPort As String
 
 End Class
+' 락카 발권 이력 저장 API 응답용 클래스
+
+' 1. API 응답 전체를 감싸는 메인 클래스
+Public Class LockerHistoryApiResponse
+    <JsonPropertyName("intResult")>
+    Public Property IntResult As Integer
+
+    <JsonPropertyName("strResult")>
+    Public Property StrResult As String
+
+    <JsonPropertyName("JSON_DATA")>
+    Public Property JsonData As List(Of LockerInsertData)
+End Class
+
+' 2. JSON_DATA 배열 안에 들어있는 상세 항목 클래스
+Public Class LockerInsertData
+    <JsonPropertyName("INSERTED_BALGWON_IDX")>
+    Public Property InsertedBalgwonIdx As Integer
+
+    <JsonPropertyName("AUTH_MESSAGE")>
+    Public Property AuthMessage As String
+End Class
+
+
 Public Class DataReceivedEventArgs
     Inherits EventArgs
 
