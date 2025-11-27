@@ -68,22 +68,21 @@ Public Class Form1
         End If
 
         ' 키오스크는 무조건 TCP 소켓 대기만 한다. 게이트 데몬으로부터 전문을 받아서 처리한다.
-        cts = New CancellationTokenSource()
-        Try
-            listener = New TcpListener(IPAddress.Any, CInt(gPosPort))
-            listener.Start()
-            Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)
-            WriteLog($"TCP 서버 시작 성공 (Port: {gPosPort})", "KioskLog.log")
-        Catch ex As SocketException
-            WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
-            MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
-        Catch ex As Exception
-            WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
-            MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
-
-
-
+        If listener Is Nothing Then
+            cts = New CancellationTokenSource()
+            Try
+                listener = New TcpListener(IPAddress.Any, CInt(gPosPort))
+                listener.Start()
+                Task.Run(Function() AcceptClientsAsync(cts.Token), cts.Token)
+                WriteLog($"TCP 서버 시작 성공 (Port: {gPosPort})", "KioskLog.log")
+            Catch ex As SocketException
+                WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
+                MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Catch ex As Exception
+                WriteLog($"TCP 서버 시작 오류: {ex.Message}", "KioskLog.log")
+                MessageBox.Show($"TCP 서버 시작 실패: {ex.Message}", "서버 시작 오류", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End Try
+        End If
 
 
         ' 2. 인증타입에 따라 분기처리
