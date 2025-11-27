@@ -20,7 +20,6 @@ Public Class Form1
     Private listenerHttp As New HttpListener()  ' 키오스크에서는 http리스너를 사용하지않는다. 게이트데몬에서 사용해서 키오스크로 TCP 소켓으로 보낸다.
     Private Shared ReadOnly client As HttpClient = New HttpClient()
 
-
     Private gFormGb As String
     Private sTestYN As Boolean = True   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
 
@@ -284,8 +283,7 @@ Public Class Form1
 
             If Not String.IsNullOrEmpty(lockerNum) Then
                 Await SendLockerNumToWebView(lockerNum, Get_BalGwonHmClassName(sBalGwonHmClass))
-                Dim nLocker As Integer
-                If Integer.TryParse(lockerNum, nLocker) Then
+                If IsNumeric(lockerNum) Then
                     ' 발권번호가 정상일때만 저장 api호출
                     Await SendLockerBalGwonHistoryInsertJson(sMemIdx, sGongDongGwaGeumIDX, sBalGwonHmClass, 1, lockerNum, 1, "공동과금 전자락카 자동 발권")
                 End If
@@ -358,8 +356,6 @@ Public Class Form1
         packet.AddRange(Encoding.ASCII.GetBytes("POS1"))     ' 발권하는 포스명칭인데 그냥 붙박이 
 
         ' User ID (예: "USER1" + 패딩)
-
-
         packet.AddRange(userIdBytes)
         For i = userIdBytes.Length To 19
             packet.Add(&H0)
@@ -369,12 +365,12 @@ Public Class Form1
         packet.Add(&H30)
 
         ' CheckInDataCount (자동발권 요청 데이터 수량, 4자리)
-        packet.AddRange(Encoding.ASCII.GetBytes("0001"))    ' 이것도 자동발권일때는 발권요청수량으로 쓰인다. 밑에꺼랑 같음..그냥 1로 붙박이..
+        packet.AddRange(Encoding.ASCII.GetBytes("0001"))    ' 이것도 자동발권일때는 발권요청수량으로 쓰인다. 밑에꺼랑 같음..그냥 1로 하드코딩..
 
         ' 발권 요청수량 
-        packet.AddRange(Encoding.ASCII.GetBytes("00001"))
+        packet.AddRange(Encoding.ASCII.GetBytes("00001"))  ' 자동발권이니까 무조건 1개로 하드코딩
 
-        ' HumanClass (분기처리)
+        ' HumanClass
         Select Case hmclass
             Case "0"  ' 남자대인
                 packet.Add(&H30)
@@ -664,7 +660,7 @@ Public Class Form1
                                 If message.StartsWith("ARGOS|", StringComparison.OrdinalIgnoreCase) Then ' ARGOS|022405130012375D|180
                                     Dim parts As String() = message.Split("|")
                                     If parts.Length >= 3 Then
-                                        Dim memIdx As String = parts(2).Trim()   ' ARGOS|022405130012375D|180
+                                        Dim memIdx As String = parts(2).Trim()   ' 180
                                         Try
                                             Dim uiTask As Task = CType(Me.Invoke(Function()
                                                                                      Return SendMemIDXToWebView(memIdx, gCompanyCode, gPosNo, gTimer)
@@ -682,10 +678,8 @@ Public Class Form1
                                 Else
                                     responseMessage = $"[오류] 전문 포맷 잘못됨 : ({message})"
                                 End If
-
                                 Await writer.WriteLineAsync(responseMessage)
                                 WriteLog($"클라이언트로 전송: {responseMessage}", "KioskLog.log")
-
                             End While
                         End Using
                     End Using
@@ -887,7 +881,6 @@ Public Class Form1
 
     Private Async Sub Button1_Click(sender As Object, e As EventArgs) Handles Button1.Click
 
-
         Dim sBalGwonJangbiType As String = ""   '유니락/ 이에스택 구분값  (2 : 이에스택, 1 : 유니락)
         Dim sBalGwonJangbiIp As String = ""     '전자락 아이피 ex) 192.168.0.242
         Dim sBalGwonJangbiPort As String = ""   '전자락 포트 ex) 33001
@@ -904,9 +897,6 @@ Public Class Form1
 
         Await Bas_LockerBalGwon(sBalGwonJangbiType, sBalGwonJangbiIp, sBalGwonJangbiPort, sBalGwonHmClass, sMemIdx, sGongDongGwaGeumIDX)
 
-
-
-
-
     End Sub
+
 End Class
