@@ -21,7 +21,7 @@ Public Class Form1
     Private Shared ReadOnly client As HttpClient = New HttpClient()
 
     Private gFormGb As String
-    Private sTestYN As Boolean = True   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
+    Private sTestYN As Boolean = False   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
 
     Private gPosPort As String
     Private listener As TcpListener
