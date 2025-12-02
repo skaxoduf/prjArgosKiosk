@@ -6,6 +6,16 @@ Module modFunc
 
     Public WithEvents serialPort As New SerialPort()
 
+    Public Enum BXL_INTERFACE
+        SERIAL = 0      ' Serial (RS-232)
+        PARALLEL = 1    ' Parallel (LPT)
+        USB = 2         ' USB
+        ETHERNET = 3    ' Ethernet (LAN)
+        WLAN = 4        ' Wi-Fi
+        BLUETOOTH = 5   ' Bluetooth
+    End Enum
+
+
     ' 시리얼포트 연결 함수
     Public Sub ConnectSerialPort(portName As String, baudRate As Integer)
         ' 만약 포트가 이미 열려있다면 닫기
@@ -101,67 +111,101 @@ Module modFunc
             Debug.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] FILE LOGGING ERROR: {ex.Message}")
         End Try
 
-
-        '' 프로그램 시작 시
-        'WriteLog("프로그램을 시작합니다.", "MyProgram.log")
-        ' SDK 초기화 실패 시
-        'WriteLog("SDK 초기화 실패. 오류 코드: " & result, "MyProgram.log")
-
     End Sub
 
-    ' 전자락 Bixolon 프린터로 티켓 출력하는 함수
-    Public Sub PrintTicket(ByVal ticketNum As String)
+    ''' <summary>
+    ''' 영수증 프린터로 발권 번호를 출력하는 공통함수
+    ''' </summary>
+    ''' <param name="ticketNum">발권 번호 (예: 101)</param>
+    ''' <param name="nInterface">연결 방식 (0:Serial, 2:USB, 3:LAN)</param>
+    ''' <param name="szPortName">포트명 (USB:, COM1, 192.168.0.10)</param>
+    ''' <param name="nBaudRate">통신속도 (기본값 9600)</param>
+    Public Sub PrintTicket(ByVal ticketNum As String, ByVal nInterface As Integer, ByVal szPortName As String, Optional ByVal nBaudRate As Integer = 9600)
+
+        '    ' 1. USB 연결 (값: 2)
+        'PrintTicket("101", 2, "USB:") 
+        '' 또는
+        'PrintTicket("101", BXL_INTERFACE.USB, "USB:")
+
+        '' 2. 시리얼 연결 (값: 0) - COM3 포트, 9600bps
+        'PrintTicket("102", 0, "COM3", 9600)
+
+        '' 3. LAN 연결 (값: 3) - 프린터 IP: 192.168.0.200
+        'PrintTicket("103", 3, "192.168.0.200", 9100)
+
+
+        ' 클래스 인스턴스 생성
         Dim bxl As New clsBXLAPI()
-        Dim nResult As Integer
+        Dim nResult As Integer = 0
 
-        ' 1. 프린터 연결 (USB 인터페이스 기준)
-        ' PrinterOpen(nInterface, szPortName, nBaudRate, nDataBits, nParity, nStopBits, nFlowControl) 
-        ' - nInterface: 0 (USB), 1 (Serial), ...
-        ' - szPortName: USB의 경우 "USB:", Serial의 경우 "COM1" 등
-        nResult = bxl.PrinterOpen(0, "USB:", 0, 0, 0, 0, 0)
+        ' 이더넷 포트 처리를 위한 변수
+        Dim nEthernetPort As Integer = 9100
 
-        ' 연결 실패 시 처리 (Bixolon 성공 코드는 보통 0 또는 1이므로, 실제 리턴값 확인 필요)
-        ' 연결이 안 되면 nResult가 에러 코드를 반환합니다.
-        If nResult <> 0 And nResult <> 1 Then
-            ' (성공 상수가 0인지 1인지 모듈에 따라 다를 수 있어 둘 다 체크하거나, 실패 시 로그 확인)
-            WriteLog("프린터 연결 실패: " & nResult, "KioskLog.log")
+        ' ---------------------------------------------------------
+        ' 1. 프린터 연결 (타입 변환 명시하여 문법 오류 방지)
+        ' ---------------------------------------------------------
+        Select Case nInterface
+            Case CInt(BXL_INTERFACE.SERIAL) ' [값: 0]
+                ' 시리얼: 포트명(COMx), 속도(9600 등), 데이터비트(8), 패리티(0), 스톱비트(0), 흐름제어(0)
+                nResult = bxl.PrinterOpen(nInterface, szPortName, nBaudRate, 8, 0, 0, 0)
+
+            Case CInt(BXL_INTERFACE.USB)    ' [값: 2]
+                ' USB: 포트명 "USB:", 나머지는 0
+                nResult = bxl.PrinterOpen(nInterface, "USB:", 0, 0, 0, 0, 0)
+
+            Case CInt(BXL_INTERFACE.ETHERNET) ' [값: 3]
+                ' 이더넷: 포트번호(9100) 설정
+                If nBaudRate > 0 Then nEthernetPort = nBaudRate
+                ' IP주소(szPortName), 포트번호(nEthernetPort)
+                nResult = bxl.PrinterOpen(nInterface, szPortName, nEthernetPort, 0, 0, 0, 0)
+
+            Case Else
+                MsgBox("지원하지 않는 인터페이스 번호입니다: " & nInterface)
+                WriteLog("지원하지 않는 인터페이스 번호입니다: " & nInterface, "PrintLog.log")
+                Exit Sub
+        End Select
+
+        ' ---------------------------------------------------------
+        ' 2. 연결 결과 확인 (성공 시 0 또는 1 반환)
+        ' ---------------------------------------------------------
+        If nResult <> 1 AndAlso nResult <> 0 Then
+            WriteLog("프린터 연결 실패! 에러코드: " & nResult, "PrintLog.log")
             Exit Sub
         End If
 
-        ' --- 인자값 설정 ---
-        ' Alignment: 0(Left), 1(Center), 2(Right)
-        ' Attribute: 0(Normal), 4(Bold) 등 (비트 마스크)
-        ' TextSize: 0(Normal), 17(2배 확대) 등 (상위/하위 바이트로 가로/세로 배율 지정)
-        ' -------------------
+        ' ---------------------------------------------------------
+        ' 3. 출력 로직
+        ' ---------------------------------------------------------
+        Try
+            ' [헤더] 가운데 정렬(1), 굵게(4), 기본크기(0)
+            bxl.PrintText("=== 전자락 발권 ===" & vbCrLf, 1, 4, 0)
+            bxl.PrintText(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") & vbCrLf, 1, 0, 0)
+            bxl.PrintText("------------------------------" & vbCrLf, 1, 0, 0)
 
-        ' 2. 헤더 출력 (가운데 정렬, 굵게)
-        ' PrintText(Data, Alignment, Attribute, TextSize) 
-        bxl.PrintText("=== 발권 정보 ===" & vbCrLf, 1, 4, 0)
-        bxl.PrintText(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") & vbCrLf, 1, 0, 0)
-        bxl.PrintText("------------------------------" & vbCrLf, 1, 0, 0)
+            ' [번호] 텍스트 확대
+            bxl.PrintText("발권 번호" & vbCrLf, 1, 0, 0)
 
-        ' 3. 발권 번호 (크게 강조)
-        bxl.PrintText("발권 번호" & vbCrLf, 1, 0, 0)
+            ' TextSize 17 (0x11) = 가로 2배, 세로 2배 확대
+            bxl.PrintText(ticketNum & vbCrLf, 1, 4, 17)
 
-        ' [중요] TextSize = 17 (0x11) -> 가로 2배, 세로 2배 확대를 의미하는 경우가 많음
-        ' 만약 크기가 안 변하면 1, 2, 16, 32 등을 시도해보세요.
-        bxl.PrintText(ticketNum & vbCrLf, 1, 4, 17)
+            ' [바닥글]
+            bxl.PrintText(vbCrLf, 1, 0, 0)
+            bxl.PrintText("------------------------------" & vbCrLf, 1, 0, 0)
+            bxl.PrintText("이용해 주셔서 감사합니다." & vbCrLf, 1, 0, 0)
 
-        bxl.PrintText(vbCrLf, 1, 0, 0)
+            ' [배출 여백] 3줄 띄우기
+            bxl.PrintText(vbCrLf & vbCrLf & vbCrLf, 1, 0, 0)
 
-        ' 4. 하단 문구
-        bxl.PrintText("------------------------------" & vbCrLf, 1, 0, 0)
-        bxl.PrintText("이용해 주셔서 감사합니다." & vbCrLf, 1, 0, 0)
+            ' [커팅]
+            bxl.CutPaper()
 
-        ' 용지 배출을 위한 공백 라인 (보통 3~4줄)
-        bxl.PrintText(vbCrLf & vbCrLf & vbCrLf, 1, 0, 0)
+        Catch ex As Exception
+            WriteLog("인쇄 중 오류 발생: " & ex.Message, "PrintLog.log")
+            MsgBox("인쇄 중 오류 발생: " & ex.Message)
+        Finally
+            bxl.PrinterClose()  ' 프린터 연결 종료
+        End Try
 
-        ' 5. 용지 커팅
-        ' CutPaper() 인자 없음 
-        bxl.CutPaper()
-
-        ' 6. 연결 종료 [cite: 3]
-        bxl.PrinterClose()
     End Sub
 
 
