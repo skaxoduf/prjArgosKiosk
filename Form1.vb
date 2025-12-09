@@ -21,7 +21,7 @@ Public Class Form1
     Private Shared ReadOnly client As HttpClient = New HttpClient()
 
     Private gFormGb As String
-    Private sTestYN As Boolean = False   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
+    Private sTestYN As Boolean = True   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
 
     Private gPosPort As String
     Private listener As TcpListener
@@ -304,94 +304,7 @@ Public Class Form1
             WriteLog($"웹뷰 통신 중 오류: " & ex.Message, "KioskLog.log")
         End Try
     End Function
-    Private Function BAS_UniLocker(hmclass As String, ip As String, port As String) As String
-        Try
-            Dim packet() As Byte = BAS_SUB_UniLocker(hmclass)
 
-            Using client As New TcpClient(ip, Integer.Parse(port))
-                Using stream As NetworkStream = client.GetStream()
-                    stream.Write(packet, 0, packet.Length)
-
-                    Dim buffer(255) As Byte
-                    Dim bytesRead As Integer = stream.Read(buffer, 0, buffer.Length)
-
-                    If bytesRead > 0 Then
-                        Return ParseLockerNumber(buffer)
-                    Else
-                        Return "발권 실패"
-                    End If
-                End Using
-            End Using
-        Catch ex As Exception
-            Return "Error: " & ex.Message
-        End Try
-    End Function
-    Private Function ParseLockerNumber(responseBytes() As Byte) As String
-        Try
-            ' 24~28번째 바이트 (5자리 번호)
-            Dim lockerNum As String = Encoding.ASCII.GetString(responseBytes, 24, 5)
-            lockerNum = lockerNum.TrimStart("0"c)
-            If String.IsNullOrEmpty(lockerNum) Then
-                Return "Error: Empty"
-            End If
-            Return lockerNum
-        Catch ex As Exception
-            Return "Error: Parse Fail"
-        End Try
-    End Function
-    Private Function BAS_SUB_UniLocker(hmclass As String) As Byte()
-        Dim packet As New List(Of Byte)
-        Dim userId As String = "USER1"    ' 발권요청한 아이디인데 그냥 붙박이 
-        Dim userIdBytes As Byte() = Encoding.ASCII.GetBytes(userId)
-
-        ' Header
-        packet.Add(&H70) ' Version
-        packet.Add(&H41) ' Command
-        packet.Add(&HFF) ' Address
-        packet.Add(&HFF)
-        packet.Add(&HFF)
-        packet.Add(&HFF) ' Encryption(스펙상 0xFF/0x00 둘다 허용. 0xFF 많이 사용)
-        packet.AddRange(Encoding.ASCII.GetBytes("00037"))    ' Length (5자리)  '' 자동발권은 37이 그냥 고정 붙박이다.
-        packet.AddRange(Encoding.ASCII.GetBytes("POS1"))     ' 발권하는 포스명칭인데 그냥 붙박이 
-
-        ' User ID (예: "USER1" + 패딩)
-        packet.AddRange(userIdBytes)
-        For i = userIdBytes.Length To 19
-            packet.Add(&H0)
-        Next
-
-        ' CheckInCondition (1번그룹)
-        packet.Add(&H30)
-
-        ' CheckInDataCount (자동발권 요청 데이터 수량, 4자리)
-        packet.AddRange(Encoding.ASCII.GetBytes("0001"))    ' 이것도 자동발권일때는 발권요청수량으로 쓰인다. 밑에꺼랑 같음..그냥 1로 하드코딩..
-
-        ' 발권 요청수량 
-        packet.AddRange(Encoding.ASCII.GetBytes("00001"))  ' 자동발권이니까 무조건 1개로 하드코딩
-
-        ' HumanClass
-        Select Case hmclass
-            Case "0"  ' 남자대인
-                packet.Add(&H30)
-            Case "1"  ' 남자소인
-                packet.Add(&H31)
-            Case "2"  ' 여자대인
-                packet.Add(&H32)
-            Case "3"  ' 여자소인
-                packet.Add(&H33)
-            Case Else
-                packet.Add(&H30)
-        End Select
-
-        ' CheckInGroup (0: 0번그룹)
-        packet.Add(&H30)
-
-        ' CheckInType (1: 사우나)
-        packet.Add(&H31)
-
-        ' 총 바이트 48바이트가 되어야 정상
-        Return packet.ToArray()
-    End Function
     Public Async Function Get_WebPosInfo() As Task
 
         ' webpos가 설치된 곳의 ini 파일을 읽어오는 함수 
