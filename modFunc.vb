@@ -8,6 +8,7 @@ Module modFunc
 
     Public WithEvents serialPort As New SerialPort()
 
+    ' 빅솔론 프린터 인터페이스 열거형 선언
     Public Enum BXL_INTERFACE
         SERIAL = 0      ' Serial (RS-232)
         PARALLEL = 1    ' Parallel (LPT)
@@ -171,6 +172,7 @@ Module modFunc
         ' 2. 연결 결과 확인 (성공 시 0 또는 1 반환)
         ' ---------------------------------------------------------
         If nResult <> 1 AndAlso nResult <> 0 Then
+            MsgBox("프린터 연결 실패! 에러코드: " & nResult)
             WriteLog("프린터 연결 실패! 에러코드: " & nResult, "PrintLog.log")
             Exit Sub
         End If
@@ -202,8 +204,8 @@ Module modFunc
             bxl.CutPaper()
 
         Catch ex As Exception
-            WriteLog("인쇄 중 오류 발생: " & ex.Message, "PrintLog.log")
             MsgBox("인쇄 중 오류 발생: " & ex.Message)
+            WriteLog("인쇄 중 오류 발생: " & ex.Message, "PrintLog.log")
         Finally
             bxl.PrinterClose()  ' 프린터 연결 종료
         End Try

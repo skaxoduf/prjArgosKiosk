@@ -24,6 +24,9 @@ Public Class Form1
     Private sTestYN As Boolean = True   ' TEST 환경인지 플래그, 테스트 : True,  배포 : False
 
     Private gPosPort As String
+    Private gReceiptPrintMethod As String
+    Private gReceiptPrintPort As String
+    Private gReceiptPrintYN As Boolean
     Private listener As TcpListener
     Private cts As CancellationTokenSource
     Private connectedClients As New List(Of TcpClient)
@@ -45,10 +48,10 @@ Public Class Form1
         WebView21.Left = 0
         WebView21.Top = 0
 
-        Await subFormInutialize()
+        Await subFormInitialize()
 
     End Sub
-    Private Async Function subFormInutialize() As Task
+    Private Async Function subFormInitialize() As Task
 
         ' 폼 로드
         Await subFormLoad()
@@ -67,7 +70,7 @@ Public Class Form1
             Return ' 포트가 없으면 서버 시작 로직을 중단
         End If
 
-        ' 키오스크는 무조건 TCP 소켓 대기만 한다. 게이트 데몬으로부터 전문을 받아서 처리한다.
+        ' 키오스크는 무조건 TCP 소켓 대기만 한다. 게이트 데몬으로부터 전문을 받아서 입주민 인증을 처리한다.
         If listener Is Nothing Then
             cts = New CancellationTokenSource()
             Try
@@ -163,11 +166,16 @@ Public Class Form1
             posInfo = Await GetPosInfoAsync(gCompanyIdx, gCompanyCode, gPosNo)
             If posInfo IsNot Nothing AndAlso posInfo.IntResult = 1 Then
                 gPosPort = posInfo.PosPort
+                ' 영수증 프린터 정보 가져오기
+                gReceiptPrintMethod = posInfo.ReceiptPrintMethod  ' 시리얼포트, 패러럴포트
+                gReceiptPrintPort = posInfo.ReceiptPrintPort  ' COM1, COM2 ....
+                gReceiptPrintYN = posInfo.ReceiptPrintYn  'True, False (사용여부)
             End If
 
             ' 시리얼 포트번호가 있으면 시리얼에 연결한다.
             If IsNumeric(gSeralPortNo) = True Then
                 modFunc.ConnectSerialPort("COM" + gSeralPortNo, 9600)
+                'RemoveHandler modFunc.serialPort.DataReceived, AddressOf HandleSerialData
                 AddHandler modFunc.serialPort.DataReceived, AddressOf HandleSerialData
             End If
 
@@ -285,6 +293,13 @@ Public Class Form1
                 If IsNumeric(lockerNum) Then
                     ' 발권번호가 정상일때만 저장 api호출
                     Await SendLockerBalGwonHistoryInsertJson(sMemIdx, sGongDongGwaGeumIDX, sBalGwonHmClass, 1, lockerNum, 1, "공동과금 전자락카 자동 발권")
+
+                    ' 프린트 출력
+                    If gReceiptPrintYN = True Then  ' 프린터 사용여부 Y
+                        Await Task.Delay(500)
+                        modFunc.PrintTicket(lockerNum, 0, gReceiptPrintPort, "9600")
+                    End If
+
                 End If
             Else
                 WriteLog($"발권 실패: {lockerNum}", "KioskLog.log")
@@ -341,7 +356,7 @@ Public Class Form1
             Dim url As String = $"{gUrl}api/cs/pos_info_select.asp?company_IDX={companyIdx}&company_code={companyCode}&pos_no={pos_no}"
             Dim jsonStr As String = Await client.GetStringAsync(url)
 
-            ' {"intResult":1,"strResult":"정상","POS_NAME":"사무실포스","POS_TYPE":2,"POS_IP":"192.168.0.242","POS_PORT":"36001"}
+            ' {"intResult":1,"strResult":"정상","POS_NAME":"슈프리마 포스","POS_TYPE":-1,"POS_IP":"192.168.0.242","POS_PORT":"36001","RECEIPT_PRINT_METHOD":"시리얼포트","RECEIPT_PRINT_PORT":"COM1","RECEIPT_PRINT_YN":true}
 
             Dim response As GetPosInfoAsyncApiResponse = JsonSerializer.Deserialize(Of GetPosInfoAsyncApiResponse)(jsonStr)
             Return response
@@ -514,7 +529,7 @@ Public Class Form1
         Await Get_WebPosInfo()
 
         ' 다시 폼로딩
-        Await subFormInutialize()
+        Await subFormInitialize()
 
         Try
             ' 로그인화면이 잠깐 보이는걸 방지하기위해 임의의 딜레이를 준다.

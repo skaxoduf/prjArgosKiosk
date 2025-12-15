@@ -70,6 +70,15 @@ Public Class GetPosInfoAsyncApiResponse
     <JsonPropertyName("POS_PORT")>
     Public Property PosPort As String
 
+    <JsonPropertyName("RECEIPT_PRINT_METHOD")>
+    Public Property ReceiptPrintMethod As String
+
+    <JsonPropertyName("RECEIPT_PRINT_PORT")>
+    Public Property ReceiptPrintPort As String
+
+    <JsonPropertyName("RECEIPT_PRINT_YN")>
+    Public Property ReceiptPrintYn As Boolean
+
 End Class
 ' 락카 발권 이력 저장 API 응답용 클래스
 
