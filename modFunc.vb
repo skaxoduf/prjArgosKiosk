@@ -123,7 +123,7 @@ Module modFunc
     ''' <param name="nInterface">연결 방식 (0:Serial, 2:USB, 3:LAN)</param>
     ''' <param name="szPortName">포트명 (USB:, COM1, 192.168.0.10)</param>
     ''' <param name="nBaudRate">통신속도 (기본값 9600)</param>
-    Public Sub PrintTicket(ByVal ticketNum As String, ByVal nInterface As Integer, ByVal szPortName As String, Optional ByVal nBaudRate As Integer = 9600)
+    Public Sub PrintTicket(ByVal ticketNum As String, ByVal hmClass As String, ByVal nInterface As Integer, ByVal szPortName As String, Optional ByVal nBaudRate As Integer = 9600)
 
         '    ' 1. USB 연결 (값: 2)
         'PrintTicket("101", 2, "USB:") 
@@ -181,23 +181,37 @@ Module modFunc
         ' 3. 출력 로직
         ' ---------------------------------------------------------
         Try
-            ' [헤더] 가운데 정렬(1), 굵게(4), 기본크기(0)
+
+            Dim nTicket As Integer
+            Dim displayNum As String = ticketNum ' 기본값은 입력받은 그대로
+            If Integer.TryParse(ticketNum, nTicket) Then
+                If nTicket >= 5000 Then
+                    nTicket = nTicket - 5000
+                    displayNum = nTicket.ToString() ' 계산된 값을 출력용 변수에 저장
+                End If
+            End If
+
+            ' [헤더]
             bxl.PrintText("=== 전자락 발권 ===" & vbCrLf, 1, 4, 0)
             bxl.PrintText(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") & vbCrLf, 1, 0, 0)
             bxl.PrintText("------------------------------" & vbCrLf, 1, 0, 0)
 
-            ' [번호] 텍스트 확대
-            bxl.PrintText("발권 번호" & vbCrLf, 1, 0, 0)
+            ' 1) "발권번호" 타이틀 출력 (중앙 정렬, 기본 크기)
+            bxl.PrintText("발권번호" & vbCrLf, 1, 0, 0)
 
-            ' TextSize 17 (0x11) = 가로 2배, 세로 2배 확대
-            bxl.PrintText(ticketNum & vbCrLf, 1, 4, 17)
+            ' 2) 구분 명칭 가져오기
+            Dim sClassName As String = Get_BalGwonHmClassName(hmClass)
+
+            ' 3) 내용 구성 (예: 남자대인 - 255)
+            Dim detailMsg As String = $"{sClassName} - {displayNum}"
+
+            ' 4) 내용 출력 (중앙 정렬(1), 굵게(4), 2배 확대(17))
+            bxl.PrintText(detailMsg & vbCrLf, 1, 4, 17)
 
             ' [바닥글]
             bxl.PrintText(vbCrLf, 1, 0, 0)
             bxl.PrintText("------------------------------" & vbCrLf, 1, 0, 0)
             bxl.PrintText("이용해 주셔서 감사합니다." & vbCrLf, 1, 0, 0)
-
-            ' [배출 여백] 3줄 띄우기
             bxl.PrintText(vbCrLf & vbCrLf & vbCrLf, 1, 0, 0)
 
             ' [커팅]

@@ -297,7 +297,7 @@ Public Class Form1
                     ' 프린트 출력
                     If gReceiptPrintYN = True Then  ' 프린터 사용여부 Y
                         Await Task.Delay(500)
-                        modFunc.PrintTicket(lockerNum, 0, gReceiptPrintPort, "9600")
+                        modFunc.PrintTicket(lockerNum, sBalGwonHmClass, 0, gReceiptPrintPort, "9600")
                     End If
 
                 End If
