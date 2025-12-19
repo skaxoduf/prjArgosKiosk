@@ -183,11 +183,11 @@ Module modFunc
         Try
 
             Dim nTicket As Integer
-            Dim displayNum As String = ticketNum ' 기본값은 입력받은 그대로
+            Dim displayNum As String = ticketNum
             If Integer.TryParse(ticketNum, nTicket) Then
-                If nTicket >= 5000 Then
+                If nTicket >= 5000 Then  ' 번호가 5000 이상일 때만 5000을 뺌
                     nTicket = nTicket - 5000
-                    displayNum = nTicket.ToString() ' 계산된 값을 출력용 변수에 저장
+                    displayNum = nTicket.ToString()
                 End If
             End If
 
